@@ -3,6 +3,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "string.h"
+#include "parser.h"
 
 // Structure returned from mp_read_real
 typedef struct
@@ -56,9 +57,6 @@ static mp_read_real_data mp_read_real(const char* str)
 	// Return value data
 	mp_read_real_data data;
 	
-	// Update delta
-	data.delta = num_len;
-	
 	// If the number of characters read is 0, we
 	// didn't read a number
 	if(num_len == 0)
@@ -71,11 +69,14 @@ static mp_read_real_data mp_read_real(const char* str)
 		// Create a buffer big enough for the number
 		data.str = malloc(num_len + 1);
 		
+		// Update delta
+		data.delta = num_len;
+		
 		// Copy data into the buffer
 		memcpy(data.str, str, num_len);
 		
 		// Add null terminator
-		data.str[num_len + 1] = '\0';	
+		data.str[num_len] = '\0';	
 	}
 	
 	return data;
@@ -95,24 +96,45 @@ void mp_lex_string(const char* str)
 		// Read the character
 		const char c = str[i];
 		
+		// Token to add
+		token t;
+		
 		// Ignore whitespace
 		if(c == ' ') continue;
 		
 		// Addition token
-		else if(c == '+') continue;
+		else if(c == '+')
+		{
+			t.id = MP_TOKEN_ADD;
+			t.str = NULL;
+		}
 		
 		// Subtraction token
-		else if(c == '-') continue;
+		else if(c == '-')
+		{
+			t.id = MP_TOKEN_SUB;
+			t.str = NULL;
+		}
 		
 		// Multiplication token
-		else if(c == '*') continue;
+		else if(c == '*')
+		{
+			t.id = MP_TOKEN_MUL;
+			t.str = NULL;
+		}
 		
 		// Division token
-		else if(c == '/') continue;
+		else if(c == '/')
+		{
+			t.id = MP_TOKEN_DIV;
+			t.str = NULL;
+		}
 		
 		// Real number token
 		else if((real_num = mp_read_real(str + i)).str != NULL)
 		{
+			t.id = MP_TOKEN_NUM;
+			t.str = real_num.str;
 			i += real_num.delta - 1;
 		}
 		
@@ -121,5 +143,8 @@ void mp_lex_string(const char* str)
 		{
 			printf("UNEXPECTED TOKEN!!!\n");
 		}
+		
+		// Add the token
+		mp_add_token_to_parser(t);
 	}
 }

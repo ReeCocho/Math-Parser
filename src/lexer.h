@@ -25,6 +25,16 @@ typedef struct
 #define MP_TOKEN_MUL 3
 #define MP_TOKEN_DIV 4
 
+// Token associativity types
+#define MP_LEFT_ASSOC 0
+#define MP_RIGHT_ASSOC 1
+
+// Token precedence
+extern int mp_token_precedence[5];
+
+// Token associativity
+extern char mp_token_assoc[5];
+
 /**
  * Function which reads a string, turns it into tokens,
  * and pumps those tokens into the parser.

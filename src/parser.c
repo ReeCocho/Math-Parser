@@ -1,6 +1,26 @@
 /** Includes. */
+#include "string.h"
+#include "stdio.h"
 #include "stdlib.h"
 #include "lexer.h"
+
+int mp_token_precedence[5] =
+{
+	1,	// Number
+	2,	// Add
+	2,	// Subtract
+	3,	// Multiply
+	3	// Divide
+};
+
+char mp_token_assoc[5] =
+{
+	MP_LEFT_ASSOC,	// Number
+	MP_LEFT_ASSOC,  // Add
+	MP_LEFT_ASSOC,  // Subtract
+	MP_LEFT_ASSOC,  // Multiply
+	MP_LEFT_ASSOC   // Divide
+};
 
 /** Number of tokens to allocate at a time. */
 #define MP_TOKEN_CHUNK_SIZE 8
@@ -19,19 +39,6 @@ static struct
 	
 } token_queue;
 
-/** 
- * Expression return value. 
- */
-typedef struct
-{
-	/** Expression value. */
-	double value;
-	
-	/** Number of tokens read. */
-	size_t stride;
-	
-} mp_expression_result;
-
 
 
 void mp_init_parser()
@@ -44,7 +51,7 @@ void mp_init_parser()
 void mp_add_token_to_parser(token t)
 {
 	// Add token to queue
-	token_queue.tokens[++token_queue.len] = t;
+	token_queue.tokens[token_queue.len++] = t;
 	
 	// Resize token queue if needed
 	if(token_queue.len == token_queue.allocated)
@@ -61,6 +68,13 @@ void mp_add_token_to_parser(token t)
 
 void mp_flush_parser_tokens()
 {
+	// Loop over every token
+	for(size_t i = 0; i < token_queue.len; ++i)
+		// If the token is a number...
+		if(token_queue.tokens[i].id == MP_TOKEN_NUM)
+			// Free the string
+			free(token_queue.tokens[i].str);
+
 	// Free old token queue
 	free(token_queue.tokens);
 	
@@ -68,92 +82,172 @@ void mp_flush_parser_tokens()
 	mp_init_parser();
 }
 
-
-
-// Forward declaration
-static mp_expression_result mp_parse_primary_expression(const size_t offset);
-
 /**
- * Parse an additive expression.
- * @param Offset in the token queue.
- * @return Result of the expression.
+ * Convert the current token list into polish notation using the shunting yard algorithm.
  */
-static mp_expression_result mp_parse_additive_expression(const size_t offset)
+static void mp_to_polish_notation()
 {
-	size_t stride = 0;
+	// Token queue and size
+	token* pn_tokens = malloc(sizeof(token));
+	size_t pn_len = 0;
 	
-	// Read left hand side expression
-	const mp_expression_result lhs = mp_parse_primary_expression(offset + stride);
-	stride += lhs.stride;
+	// Operator token stack and size
+	token* op_tokens = malloc(sizeof(token));
+	size_t op_len = 0;
 	
-	// Read operator
-	const token op = token_queue.tokens[offset + stride];
-	++stride;
+	// Loop over every token in the original token list
+	for(size_t i = 0; i < token_queue.len; ++i)
+	{
+		// Get current token ID (For convenience)
+		const int tok = token_queue.tokens[i].id;
+		
+		// Number
+		if(tok == MP_TOKEN_NUM)
+		{
+			// Add token to queue
+			pn_tokens[pn_len++] = token_queue.tokens[i];			
+			pn_tokens = realloc(pn_tokens, sizeof(token) * (pn_len + 1));
+		}
+		// Must be an operator
+		else
+		{
+			// Pop operator tokens if needed
+			if(op_len != 0)
+			{
+				// Operator token for convenience
+				int op_tok = op_tokens[op_len - 1].id;
+			
+				// Loop from the top of the stack
+				while(
+					// Stack must not be empty
+					op_len != 0 &&
+					(
+						// Precedence is greater
+						mp_token_precedence[op_tok] > mp_token_precedence[tok]  ||
+						// Precedence is equal, but is left associative
+						(
+							mp_token_precedence[op_tok] == mp_token_precedence[tok] && 
+							mp_token_assoc[op_tok] == MP_LEFT_ASSOC
+						)
+					)
+				)
+				{	
+					// Pop operator off the stack 
+					pn_tokens[pn_len++] = op_tokens[op_len - 1];
+					pn_tokens = realloc(pn_tokens, sizeof(token) * (pn_len + 1));
+					
+					// Update operator stack length and operator token
+					if(--op_len != 0) op_tok = op_tokens[op_len - 1].id;
+				}
+			}
+			
+			// Push operator onto the stack
+			op_tokens[op_len++] = token_queue.tokens[i];
+			op_tokens = realloc(op_tokens, sizeof(token) * (op_len + 1));
+		}
+	}
 	
-	// Read right hand side expression
-	const mp_expression_result rhs = mp_parse_primary_expression(offset + stride);
-	stride += rhs.stride;
+	// Add remaining operators onto the stack
+	if(op_len != 0) for(size_t i = op_len - 1;; --i)
+	{
+		// Pop operator off the stack 
+		pn_tokens[pn_len++] = op_tokens[i];
+		pn_tokens = realloc(pn_tokens, sizeof(token) * (pn_len + 1));
 	
-	// Compute result
-	mp_expression_result res;
-	res.value = op.id == MP_TOKEN_ADD ? 
-				(lhs.value + rhs.value) : 
-				(lhs.value - rhs.value);
-	res.stride = stride - offset;
+		if(i == 0) break;
+	}
 	
-	return res;
+	// Free original tokens
+	free(token_queue.tokens);
+	
+	// Update tokens
+	token_queue.tokens = pn_tokens;
+	
+	// Free operator stack
+	free(op_tokens);
 }
 
 /**
- * Parse a multiplicative expression.
- * @param Offset in the token queue.
- * @return Result of the expression.
+ * Evaluate the token queue.
+ * @return Result of the evaluation.
+ * @note Assumes the tokens are in polish notation.
  */
-static mp_expression_result mp_parse_multiplicative_expression(const size_t offset)
+static double mp_evaluate_tokens()
 {
-	size_t stride = 0;
+	// Operand stack and size
+	double* opnd_stack = malloc(sizeof(double));
+	size_t opnd_len = 0;
 	
-	// Read left hand side expression
-	const mp_expression_result lhs = mp_parse_primary_expression(offset + stride);
-	stride += lhs.stride;
+	// Pending operand flag
+	char pending_operand = 0;
 	
-	// Read operator
-	const token op = token_queue.tokens[offset + stride];
-	++stride;
+	// Loop over every token
+	for(size_t i = 0; i < token_queue.len; ++i)
+	{
+		// If token is an operand...
+		if(token_queue.tokens[i].id == MP_TOKEN_NUM)
+		{
+			// Convert token to a double
+			double operand;
+			sscanf(token_queue.tokens[i].str, "%lf", &operand);
+		
+			// Push it onto the operand stack
+			opnd_stack[opnd_len++] = operand;
+			opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
+		}
+		// Otherwise it is an operator...
+		else
+		{
+			// Pop operands from the stack
+			const double operand_1 = opnd_stack[--opnd_len];
+			double operand_2 = opnd_stack[--opnd_len];
+			opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
+			
+			// Compute resulting value and put it in operand 2
+			switch(token_queue.tokens[i].id)
+			{
+			case MP_TOKEN_ADD:
+				operand_2 += operand_1;
+				break;
+				
+			case MP_TOKEN_SUB:
+				operand_2 -= operand_1;
+				break;
+				
+			case MP_TOKEN_MUL:
+				operand_2 *= operand_1;
+				break;
+				
+			case MP_TOKEN_DIV:
+				operand_2 /= operand_1;
+				break;
+			}
+			
+			// Push result onto the stack
+			opnd_stack[opnd_len++] = operand_2;
+			opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
+		}
+	}
 	
-	// Read right hand side expression
-	const mp_expression_result rhs = mp_parse_primary_expression(offset + stride);
-	stride += rhs.stride;
+	// Result is the final operand
+	double res = opnd_stack[0];
 	
-	// Compute result
-	mp_expression_result res;
-	res.value = op.id == MP_TOKEN_MUL ? 
-				(lhs.value * rhs.value) : 
-				(lhs.value / rhs.value);
-	res.stride = stride;
+	// Free stack
+	free(opnd_stack);
 	
 	return res;
-}
-
-/**
- * Parse a primary expression.
- * @param Offset in the token queue.
- * @return Result of the expression.
- */
-static mp_expression_result mp_parse_primary_expression(const size_t offset)
-{
-	size_t stride = 0;
-	
-	//
 }
 
 void mp_parse_all()
 {
-	// Loop over every token
-	for(size_t i = 0; i < token_queue.len; ++i)
-	{
-		
-	}
+	// Convert token queue into polish notation
+	mp_to_polish_notation();
+	
+	// Evaluate tokens
+	const double eval = mp_evaluate_tokens();
+	
+	// Print result
+	printf("%lf\n", eval);
 	
 	// Flush the token queue
 	mp_flush_parser_tokens();
