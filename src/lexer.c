@@ -130,6 +130,20 @@ void mp_lex_string(const char* str)
 			t.str = NULL;
 		}
 		
+		// Left paren
+		else if(c == '(')
+		{
+			t.id = MP_TOKEN_LPN;
+			t.str = NULL;
+		}
+		
+		// Right paren
+		else if(c == ')')
+		{
+			t.id = MP_TOKEN_RPN;
+			t.str = NULL;
+		}
+		
 		// Real number token
 		else if((real_num = mp_read_real(str + i)).str != NULL)
 		{
@@ -141,7 +155,9 @@ void mp_lex_string(const char* str)
 		// Unkown token
 		else 
 		{
-			printf("UNEXPECTED TOKEN!!!\n");
+			printf("Unexpected token!\n");
+			mp_flush_parser_tokens();
+			return;
 		}
 		
 		// Add the token

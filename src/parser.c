@@ -108,6 +108,30 @@ static void mp_to_polish_notation()
 			pn_tokens[pn_len++] = token_queue.tokens[i];			
 			pn_tokens = realloc(pn_tokens, sizeof(token) * (pn_len + 1));
 		}
+		
+		// Left paren
+		else if(tok == MP_TOKEN_LPN)
+		{			
+			// Add to operator stack
+			op_tokens[op_len++] = token_queue.tokens[i];			
+			op_tokens = realloc(op_tokens, sizeof(token) * (op_len + 1));
+		}
+		
+		// Right paren
+		else if(tok == MP_TOKEN_RPN)
+		{
+			// Pop operators off the stack that aren't left brackets
+			while(op_len != 0 && op_tokens[op_len - 1].id != MP_TOKEN_LPN)
+			{
+				pn_tokens[pn_len++] = op_tokens[--op_len];
+				pn_tokens = realloc(pn_tokens, sizeof(token) * (pn_len + 1));
+				op_tokens = realloc(op_tokens, sizeof(token) * (op_len + 1));
+			}
+						
+			// Pop left bracket
+			op_tokens = realloc(op_tokens, sizeof(token) * (op_len--));
+		}
+		
 		// Must be an operator
 		else
 		{
@@ -128,7 +152,9 @@ static void mp_to_polish_notation()
 						(
 							mp_token_precedence[op_tok] == mp_token_precedence[tok] && 
 							mp_token_assoc[op_tok] == MP_LEFT_ASSOC
-						)
+						) &&
+						// Not a left bracket
+						op_tok != MP_TOKEN_LPN
 					)
 				)
 				{	
@@ -162,9 +188,13 @@ static void mp_to_polish_notation()
 	
 	// Update tokens
 	token_queue.tokens = pn_tokens;
+	token_queue.len = pn_len;
 	
 	// Free operator stack
 	free(op_tokens);
+	
+	// for(size_t i = 0; i < pn_len; ++i)
+	// 	printf("%d ", pn_tokens[i].id);
 }
 
 /**
