@@ -90,6 +90,9 @@ void mp_lex_string(const char* str)
 	// Return data from reading a real number
 	mp_read_real_data real_num;
 	
+	// Flag stating the next subtraction token is actually a negation token
+	char sub_is_neg = 1;
+	
 	// Loop over the string
 	for(size_t i = 0; i < len; ++i)
 	{
@@ -107,13 +110,17 @@ void mp_lex_string(const char* str)
 		{
 			t.id = MP_TOKEN_ADD;
 			t.str = NULL;
+			
+			sub_is_neg = 1;
 		}
 		
 		// Subtraction token
 		else if(c == '-')
 		{
-			t.id = MP_TOKEN_SUB;
+			t.id = sub_is_neg == 1 ? MP_TOKEN_NEG : MP_TOKEN_SUB;
 			t.str = NULL;
+			
+			sub_is_neg = 1;
 		}
 		
 		// Multiplication token
@@ -121,6 +128,8 @@ void mp_lex_string(const char* str)
 		{
 			t.id = MP_TOKEN_MUL;
 			t.str = NULL;
+			
+			sub_is_neg = 1;
 		}
 		
 		// Division token
@@ -128,6 +137,8 @@ void mp_lex_string(const char* str)
 		{
 			t.id = MP_TOKEN_DIV;
 			t.str = NULL;
+			
+			sub_is_neg = 1;
 		}
 		
 		// Left paren
@@ -135,6 +146,8 @@ void mp_lex_string(const char* str)
 		{
 			t.id = MP_TOKEN_LPN;
 			t.str = NULL;
+			
+			sub_is_neg = 1;
 		}
 		
 		// Right paren
@@ -142,6 +155,8 @@ void mp_lex_string(const char* str)
 		{
 			t.id = MP_TOKEN_RPN;
 			t.str = NULL;
+			
+			sub_is_neg = 0;
 		}
 		
 		// Real number token
@@ -150,6 +165,8 @@ void mp_lex_string(const char* str)
 			t.id = MP_TOKEN_NUM;
 			t.str = real_num.str;
 			i += real_num.delta - 1;
+			
+			sub_is_neg = 0;
 		}
 		
 		// Unkown token
