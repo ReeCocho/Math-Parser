@@ -36,7 +36,7 @@ typedef struct
 	token t;
 	
 	/** General purpose flag. */
-	char flag;
+	size_t flag;
 	
 } pn_token;
 
@@ -126,17 +126,17 @@ static void mp_to_polish_notation()
 			char* str = token_queue.tokens[i].str;
 			if(next_is_neg)
 			{
-				// Create new string
+				// Get string length
 				size_t len = strlen(str);
-				char* new_str = malloc(len + 2);
 				
-				// Update string
-				new_str[0] = '-';
-				memcpy(new_str + 1, str, len + 1); 
+				// Resize string to fit negative sign
+				str = realloc(str, len + 2);
 				
-				// Free old string and set new one
-				free(str);
-				str = new_str;
+				// Shift data in string over by 1 byte
+				memmove(str + 1, str, len + 1);
+				
+				// Add negative sign
+				str[0] = '-';
 			}
 		
 			// Add token to queue
@@ -151,6 +151,17 @@ static void mp_to_polish_notation()
 		// Left paren
 		else if(tok == MP_TOKEN_LPN)
 		{			
+			// Add 0 to stack if negative (To make the expression 0 - x)
+			if(next_is_neg)
+			{
+				pn_tokens[pn_len].flag = 0;
+				pn_tokens[pn_len].t.id = MP_TOKEN_NUM;
+				pn_tokens[pn_len].t.str = malloc(2);
+				pn_tokens[pn_len].t.str[0] = '0';
+				pn_tokens[pn_len++].t.str[1] = '\0';
+				pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 1));
+			}
+	
 			// Add to operator stack
 			op_tokens[op_len].flag = next_is_neg;
 			op_tokens[op_len++].t = token_queue.tokens[i];			
@@ -163,7 +174,7 @@ static void mp_to_polish_notation()
 		// Right paren
 		else if(tok == MP_TOKEN_RPN)
 		{
-			// Pop operators off the stack that aren't left brackets
+			// Pop operators off the stack that aren't left parenthesis
 			while(op_len != 0 && op_tokens[op_len - 1].t.id != MP_TOKEN_LPN)
 			{
 				pn_tokens[pn_len++] = op_tokens[--op_len];
@@ -174,24 +185,30 @@ static void mp_to_polish_notation()
 			// Make negative if needed
 			if(op_tokens[op_len - 1].flag == 1)
 			{
-				// Update token stack size
-				pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 3));
-				memmove(pn_tokens + 1, pn_tokens, sizeof(pn_token) * pn_len);
+				// Add a subtraction token to the end
+				pn_tokens[pn_len].t.id = MP_TOKEN_SUB;
+				pn_tokens[pn_len].t.str = NULL;
+				pn_tokens[pn_len++].flag = 0;
+				pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 1));
 				
-				// Update token length
-				pn_len += 2;
-				
-				// First token is a zero
-				pn_tokens[0].flag = 0;
-				pn_tokens[0].t.id = MP_TOKEN_NUM;
-				pn_tokens[0].t.str = malloc(2);
-				pn_tokens[0].t.str[0] = '0';
-				pn_tokens[0].t.str[1] = '\0';
-				
-				// Last token is subtraction operator
-				pn_tokens[pn_len - 1].flag = 0;
-				pn_tokens[pn_len - 1].t.id = MP_TOKEN_SUB;
-				pn_tokens[pn_len - 1].t.str = NULL;
+				// // Update token stack size
+				// pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 3));
+				// memmove(pn_tokens + 1, pn_tokens, sizeof(pn_token) * pn_len);
+				// 
+				// // Update token length
+				// pn_len += 2;
+				// 
+				// // First token is a zero
+				// pn_tokens[0].flag = 0;
+				// pn_tokens[0].t.id = MP_TOKEN_NUM;
+				// pn_tokens[0].t.str = malloc(2);
+				// pn_tokens[0].t.str[0] = '0';
+				// pn_tokens[0].t.str[1] = '\0';
+				// 
+				// // Last token is subtraction operator
+				// pn_tokens[pn_len - 1].flag = 0;
+				// pn_tokens[pn_len - 1].t.id = MP_TOKEN_SUB;
+				// pn_tokens[pn_len - 1].t.str = NULL;
 			}
 			
 			// Pop left bracket
@@ -306,6 +323,14 @@ static double mp_evaluate_tokens()
 				// Push it onto the operand stack
 				opnd_stack[opnd_len++] = operand;
 				opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
+			}
+			break;
+		
+		// If token is a negation...
+		case MP_TOKEN_NEG:
+			{
+				// Make operand negative
+				opnd_stack[opnd_len - 1] = -opnd_stack[opnd_len - 1];
 			}
 			break;
 		
