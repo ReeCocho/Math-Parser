@@ -2,30 +2,22 @@
 #include "string.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include "math.h"
 #include "lexer.h"
-
-int mp_token_precedence[6] =
-{
-	1,	// Number
-	2,	// Add
-	2,	// Subtract
-	3,	// Multiply
-	3,	// Divide
-	4	// Negation
-};
-
-char mp_token_assoc[6] =
-{
-	MP_LEFT_ASSOC,	// Number
-	MP_LEFT_ASSOC,  // Add
-	MP_LEFT_ASSOC,  // Subtract
-	MP_LEFT_ASSOC,  // Multiply
-	MP_LEFT_ASSOC,  // Divide
-	MP_RIGHT_ASSOC  // Negation
-};
 
 /** Number of tokens to allocate at a time. */
 #define MP_TOKEN_CHUNK_SIZE 8
+
+// Variable data type
+typedef struct
+{
+	/** String containing variable name. */
+	char* str;
+	
+	/** Variable value. */
+	double val;
+	
+} mp_var;
 
 /**
  * Structure used when converting token's to polish notation.
@@ -40,6 +32,30 @@ typedef struct
 	
 } pn_token;
 
+int mp_token_precedence[8] =
+{
+	1,	// Number
+	1,	// Variable
+	2,	// Add
+	2,	// Subtract
+	3,	// Multiply
+	3,	// Divide
+	4,	// Negation
+	4,	// Exponentiation
+};
+
+char mp_token_assoc[8] =
+{
+	MP_LEFT_ASSOC,	// Number
+	MP_LEFT_ASSOC, 	// Variable
+	MP_LEFT_ASSOC,  // Add
+	MP_LEFT_ASSOC,  // Subtract
+	MP_LEFT_ASSOC,  // Multiply
+	MP_LEFT_ASSOC,  // Divide
+	MP_RIGHT_ASSOC, // Negation
+	MP_RIGHT_ASSOC,	// Exponentiation
+};
+
 /** Token queue. */
 static struct
 {
@@ -52,31 +68,47 @@ static struct
 	/** Number of tokens allocated. */
 	size_t allocated;
 	
-} token_queue;
+} mp_token_queue;
+
+/** Variable list */
+static struct
+{
+	/** Pointer to array of variables. */
+	mp_var* vars;
+	
+	/** Number of variables. */
+	size_t len;
+	
+} mp_vars;
 
 
 
 void mp_init_parser()
 {
-	token_queue.tokens = malloc(sizeof(token) * MP_TOKEN_CHUNK_SIZE);
-	token_queue.len = 0;
-	token_queue.allocated = MP_TOKEN_CHUNK_SIZE;
+	// Init token queue
+	mp_token_queue.tokens = malloc(sizeof(token) * MP_TOKEN_CHUNK_SIZE);
+	mp_token_queue.len = 0;
+	mp_token_queue.allocated = MP_TOKEN_CHUNK_SIZE;
+	
+	// Init variable list
+	mp_vars.vars = malloc(sizeof(mp_var));
+	mp_vars.len = 0;
 }
 
 void mp_add_token_to_parser(token t)
 {
 	// Add token to queue
-	token_queue.tokens[token_queue.len++] = t;
+	mp_token_queue.tokens[mp_token_queue.len++] = t;
 	
 	// Resize token queue if needed
-	if(token_queue.len == token_queue.allocated)
+	if(mp_token_queue.len == mp_token_queue.allocated)
 	{
 		// Update token allocation counter
-		token_queue.allocated += MP_TOKEN_CHUNK_SIZE;
+		mp_token_queue.allocated += MP_TOKEN_CHUNK_SIZE;
 		
-		token_queue.tokens = realloc(
-			token_queue.tokens, 
-			sizeof(token) * token_queue.allocated
+		mp_token_queue.tokens = realloc(
+			mp_token_queue.tokens, 
+			sizeof(token) * mp_token_queue.allocated
 		);
 	}
 }
@@ -84,17 +116,32 @@ void mp_add_token_to_parser(token t)
 void mp_flush_parser_tokens()
 {
 	// Loop over every token
-	for(size_t i = 0; i < token_queue.len; ++i)
-		// If the token is a number...
-		if(token_queue.tokens[i].id == MP_TOKEN_NUM)
+	for(size_t i = 0; i < mp_token_queue.len; ++i)
+		// If the token is a number or variable name...
+		if(	mp_token_queue.tokens[i].id == MP_TOKEN_NUM ||
+			mp_token_queue.tokens[i].id == MP_TOKEN_VAR)
 			// Free the string
-			free(token_queue.tokens[i].str);
+			free(mp_token_queue.tokens[i].str);
 
-	// Free old token queue
-	free(token_queue.tokens);
+	// Resize token queue
+	mp_token_queue.tokens = realloc(
+		mp_token_queue.tokens, 
+		sizeof(token) * MP_TOKEN_CHUNK_SIZE
+	);
+	mp_token_queue.len = 0;
+	mp_token_queue.allocated = MP_TOKEN_CHUNK_SIZE;
+}
+
+void mp_flush_variables()
+{
+	// Loop over every variable
+	for(size_t i = 0; i < mp_vars.len; ++i)
+		// Free the variable name
+		free(mp_vars.vars[i].str);
 	
-	// Reinitialize the parser
-	mp_init_parser();
+	// Resize the variable list
+	mp_vars.vars = realloc(mp_vars.vars, sizeof(mp_var));
+	mp_vars.len = 0;
 }
 
 /**
@@ -114,16 +161,16 @@ static void mp_to_polish_notation()
 	char next_is_neg = 0;
 	
 	// Loop over every token in the original token list
-	for(size_t i = 0; i < token_queue.len; ++i)
+	for(size_t i = 0; i < mp_token_queue.len; ++i)
 	{
 		// Get current token ID (For convenience)
-		const int tok = token_queue.tokens[i].id;
+		const int tok = mp_token_queue.tokens[i].id;
 		
 		// Number
 		if(tok == MP_TOKEN_NUM)
 		{
 			// Make the value negative if needed
-			char* str = token_queue.tokens[i].str;
+			char* str = mp_token_queue.tokens[i].str;
 			if(next_is_neg)
 			{
 				// Get string length
@@ -148,6 +195,18 @@ static void mp_to_polish_notation()
 			next_is_neg = 0;
 		}
 		
+		// Variable name
+		else if(tok == MP_TOKEN_VAR)
+		{
+			// Add token to queue
+			pn_tokens[pn_len].t = mp_token_queue.tokens[i];
+			pn_tokens[pn_len++].flag = next_is_neg;
+			pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 1));
+			
+			// Reset flag
+			next_is_neg = 0;
+		}
+		
 		// Left paren
 		else if(tok == MP_TOKEN_LPN)
 		{			
@@ -164,7 +223,7 @@ static void mp_to_polish_notation()
 	
 			// Add to operator stack
 			op_tokens[op_len].flag = next_is_neg;
-			op_tokens[op_len++].t = token_queue.tokens[i];			
+			op_tokens[op_len++].t = mp_token_queue.tokens[i];			
 			op_tokens = realloc(op_tokens, sizeof(pn_token) * (op_len + 1));
 			
 			// Reset flag
@@ -190,25 +249,6 @@ static void mp_to_polish_notation()
 				pn_tokens[pn_len].t.str = NULL;
 				pn_tokens[pn_len++].flag = 0;
 				pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 1));
-				
-				// // Update token stack size
-				// pn_tokens = realloc(pn_tokens, sizeof(pn_token) * (pn_len + 3));
-				// memmove(pn_tokens + 1, pn_tokens, sizeof(pn_token) * pn_len);
-				// 
-				// // Update token length
-				// pn_len += 2;
-				// 
-				// // First token is a zero
-				// pn_tokens[0].flag = 0;
-				// pn_tokens[0].t.id = MP_TOKEN_NUM;
-				// pn_tokens[0].t.str = malloc(2);
-				// pn_tokens[0].t.str[0] = '0';
-				// pn_tokens[0].t.str[1] = '\0';
-				// 
-				// // Last token is subtraction operator
-				// pn_tokens[pn_len - 1].flag = 0;
-				// pn_tokens[pn_len - 1].t.id = MP_TOKEN_SUB;
-				// pn_tokens[pn_len - 1].t.str = NULL;
 			}
 			
 			// Pop left bracket
@@ -258,7 +298,7 @@ static void mp_to_polish_notation()
 			}
 			
 			// Push operator onto the stack
-			op_tokens[op_len++].t = token_queue.tokens[i];
+			op_tokens[op_len++].t = mp_token_queue.tokens[i];
 			op_tokens = realloc(op_tokens, sizeof(pn_token) * (op_len + 1));
 			
 			// Reset flag
@@ -277,13 +317,13 @@ static void mp_to_polish_notation()
 	}
 	
 	// Free original tokens
-	free(token_queue.tokens);
+	free(mp_token_queue.tokens);
 	
 	// Convert pn_tokens to regular tokens
-	token_queue.tokens = malloc(sizeof(token) * pn_len);
-	token_queue.len = pn_len;
+	mp_token_queue.tokens = malloc(sizeof(token) * pn_len);
+	mp_token_queue.len = pn_len;
 	for(size_t i = 0; i < pn_len; ++i)
-		token_queue.tokens[i] = pn_tokens[i].t;
+		mp_token_queue.tokens[i] = pn_tokens[i].t;
 	
 	// Free stacks
 	free(pn_tokens);
@@ -291,7 +331,7 @@ static void mp_to_polish_notation()
 	
 	// // Print loop for debugging
 	// for(size_t i = 0; i < pn_len; ++i)
-	// 	printf("%d ", token_queue.tokens[i].id);
+	// 	printf("%d ", mp_token_queue.tokens[i].id);
 }
 
 /**
@@ -309,20 +349,51 @@ static double mp_evaluate_tokens()
 	char pending_operand = 0;
 	
 	// Loop over every token
-	for(size_t i = 0; i < token_queue.len; ++i)
+	for(size_t i = 0; i < mp_token_queue.len; ++i)
 	{
-		switch(token_queue.tokens[i].id)
+		switch(mp_token_queue.tokens[i].id)
 		{
-		// If token is an operand...
+		// If token is a number...
 		case MP_TOKEN_NUM:
 			{
 				// Convert token to a double
 				double operand;
-				sscanf(token_queue.tokens[i].str, "%lf", &operand);
+				sscanf(mp_token_queue.tokens[i].str, "%lf", &operand);
 			
 				// Push it onto the operand stack
 				opnd_stack[opnd_len++] = operand;
 				opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
+			}
+			break;
+			
+		// If the token is a variable
+		case MP_TOKEN_VAR:
+			{
+				// Loop for the variable in the list
+				char found = 0;
+				for(size_t i = 0; i < mp_vars.len; ++i)
+					if(strcmp(
+						mp_vars.vars[i].str, 
+						mp_token_queue.tokens[i].str
+						) == 0
+					)
+					{
+						// Push it onto the operand stack
+						opnd_stack[opnd_len++] = mp_vars.vars[i].val;
+						opnd_stack = realloc(
+							opnd_stack, 
+							sizeof(double) * (opnd_len + 1)
+						);
+						found = 1;
+						break;
+					}
+					
+				// If we didn't find it, throw an error
+				if(found == 0) 
+					printf(
+						"Unable to locate variable \"%s\"", 
+						mp_token_queue.tokens[i].str
+					);
 			}
 			break;
 		
@@ -343,7 +414,7 @@ static double mp_evaluate_tokens()
 				opnd_stack = realloc(opnd_stack, sizeof(double) * (opnd_len + 1));
 				
 				// Compute resulting value and put it in operand 2
-				switch(token_queue.tokens[i].id)
+				switch(mp_token_queue.tokens[i].id)
 				{
 				case MP_TOKEN_ADD:
 					operand_2 += operand_1;
@@ -360,6 +431,10 @@ static double mp_evaluate_tokens()
 				case MP_TOKEN_DIV:
 					operand_2 /= operand_1;
 					break;
+					
+				case MP_TOKEN_EXP:
+					operand_2 = pow(operand_2, operand_1);
+					break;
 				}
 				
 				// Push result onto the stack
@@ -370,7 +445,7 @@ static double mp_evaluate_tokens()
 	}
 	
 	// Result is the final operand
-	double res = opnd_stack[0];
+	double res = opnd_len == 0 ? 0.0 : opnd_stack[0];
 	
 	// Free stack
 	free(opnd_stack);
@@ -380,14 +455,64 @@ static double mp_evaluate_tokens()
 
 void mp_parse_all()
 {
-	// Convert token queue into polish notation
-	mp_to_polish_notation();
+	// Detect if we are assigning a variable a value
+	if(
+		// Must have at least two tokens
+		mp_token_queue.len >= 2 &&
+		// First must be a variable name
+		mp_token_queue.tokens[0].id == MP_TOKEN_VAR &&
+		// Second must be an equals sign
+		mp_token_queue.tokens[1].id == MP_TOKEN_EQL
+	)
+	{
+		// Grab the variable name before we delete it
+		token var = mp_token_queue.tokens[0];
 	
-	// Evaluate tokens
-	const double eval = mp_evaluate_tokens();
-	
-	// Print result
-	printf("%lf\n", eval);
+		// Shift the token queue two elements down
+		// (Removing the variable name and equals sign)
+		memmove(
+			mp_token_queue.tokens, 
+			&mp_token_queue.tokens[2], 
+			sizeof(token) * (mp_token_queue.len -= 2)
+		);
+		
+		// Convert token queue into polish notation
+		mp_to_polish_notation();
+		
+		// Evaluate tokens
+		const double eval = mp_evaluate_tokens();
+		
+		// Look for the token
+		char found = 0;
+		for(size_t i = 0; i < mp_vars.len; ++i)
+			if(strcmp(mp_vars.vars[i].str, var.str) == 0)
+			{
+				// Update token value
+				mp_vars.vars[i].val = eval;
+				found = 1;
+				break;
+			}
+			
+		// If we didn't find the variable, add it to the list
+		if(found == 0)
+		{
+			mp_vars.vars[mp_vars.len].str = var.str;
+			mp_vars.vars[mp_vars.len++].val = eval;
+			mp_vars.vars = realloc(mp_vars.vars, sizeof(mp_var) * (mp_vars.len + 1));
+		}
+	}
+	// Must be evaluating an expression...
+	else
+	{
+		// Convert token queue into polish notation
+		mp_to_polish_notation();
+		
+		// Evaluate tokens
+		const double eval = mp_evaluate_tokens();
+		
+		// Print result
+		printf("%lf\n", eval);
+	}
 	
 	// Flush the token queue
 	mp_flush_parser_tokens();

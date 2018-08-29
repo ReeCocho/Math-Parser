@@ -36,6 +36,10 @@ int main(int argc, char* argv[])
 		mp_parse_all();
 	}
 	
+	// Flush tokens and variables
+	mp_flush_parser_tokens();
+	mp_flush_variables();
+	
 	// Quit message
 	printf("Closing...");
 	

@@ -5,7 +5,7 @@ project("Math-Parser")
 
 # Executable
 add_executable (
-	"Math-Parser"
+	"mp"
 	"src/lexer.c"
 	"src/lexer.h"
 	"src/main.c"

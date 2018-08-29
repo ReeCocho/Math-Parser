@@ -25,6 +25,11 @@ extern void mp_add_token_to_parser(token t);
 extern void mp_flush_parser_tokens();
 
 /**
+ * Flush the parsers variable list.
+ */
+extern void mp_flush_variables();
+
+/**
  * Parse and execute the expressions described in the token queue.
  */
 extern void mp_parse_all();
