@@ -371,15 +371,16 @@ static double mp_evaluate_tokens()
 			{
 				// Loop for the variable in the list
 				char found = 0;
-				for(size_t i = 0; i < mp_vars.len; ++i)
+				for(size_t j = 0; j < mp_vars.len; ++j)
+				{
 					if(strcmp(
-						mp_vars.vars[i].str, 
+						mp_vars.vars[j].str, 
 						mp_token_queue.tokens[i].str
 						) == 0
 					)
 					{
 						// Push it onto the operand stack
-						opnd_stack[opnd_len++] = mp_vars.vars[i].val;
+						opnd_stack[opnd_len++] = mp_vars.vars[j].val;
 						opnd_stack = realloc(
 							opnd_stack, 
 							sizeof(double) * (opnd_len + 1)
@@ -387,13 +388,17 @@ static double mp_evaluate_tokens()
 						found = 1;
 						break;
 					}
-					
+				}				
+				
 				// If we didn't find it, throw an error
 				if(found == 0) 
+				{
 					printf(
-						"Unable to locate variable \"%s\"", 
+						"Unable to locate variable \"%s\"\n", 
 						mp_token_queue.tokens[i].str
 					);
+					goto parse_failure;
+				}
 			}
 			break;
 		
@@ -451,6 +456,14 @@ static double mp_evaluate_tokens()
 	free(opnd_stack);
 	
 	return res;
+	
+	// Failure jump point
+	parse_failure:
+	
+	// Free stack
+	free(opnd_stack);
+	
+	return 0.0;
 }
 
 void mp_parse_all()
@@ -512,7 +525,7 @@ void mp_parse_all()
 		
 		// Print result
 		printf("%lf\n", eval);
-	}
+	} 
 	
 	// Flush the token queue
 	mp_flush_parser_tokens();

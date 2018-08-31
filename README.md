@@ -5,21 +5,21 @@ Math Parser is a small little mathematical expression parser I wrote in C to tes
 CMake is used for the build system, but you could just as easily compile it directly from the command line since there aren't many files. 
 
 ## Usage
-After executing the program in the command line, you can enter any standard mathematical expression. For example `11 + (5 - 6) / - 2`. Would result in the output, `11.5`. supported operations are listed below.
+After executing the program in the command line, you can enter any standard mathematical expression. For example `11 + (5 - 6) / - 2`. Would result in the output, `11.5`. supported features are listed below.
 
-### Operations
+### Features
 1. Real number Ex. `1.0`
 2. Addition (+)
 3. Subtraction (-)
 4. Multiplication (*)
 5. Division (/)
 6. Negation Ex. `-1.0`
+7. Exponentiation (^)
+8. Variables Ex. `x = 3.14159 * 4^2`
 
 ## Planned Features
 A list of planned features is given below.
 
-1. Exponentiation
-2. Variables
-3. Standard functions
-4. Custom functions
-5. Comparisons
+1. Standard functions
+2. Custom functions
+3. Comparisons
